@@ -13,12 +13,14 @@ dwell = st.sidebar.number_input("Dwell [ms]", 1.0, 500.0, 40.0)
 revisit = st.sidebar.number_input("Revisit [ms]", 1.0, 2000.0, 100.0)
 
 st.sidebar.header("2️⃣ Detection Logic")
+# --- התוספת החדשה: חפיפה מינימלית ---
+min_overlap = st.sidebar.number_input("Min Overlap for Hit [ms]", 0.0, 100.0, 0.1, step=0.1)
 age_in = st.sidebar.number_input("Age-In (Hits Needed)", 1, 10, 2)
 age_out = st.sidebar.number_input("Age-Out (Misses Allowed)", 1, 10, 2)
 max_analysis_t = st.sidebar.number_input("Max Analysis Time [ms]", 10.0, 10000.0, 1000.0)
 
 st.sidebar.header("3️⃣ Monte Carlo Settings")
-trials = st.sidebar.slider("Number of Offsets", 100, 5000, 1000)
+trials = st.sidebar.slider("Number of Offsets", 0, 20000, 10000)
 
 # =========================================================
 # 4️⃣ הוספת איומים דינמית
@@ -52,15 +54,24 @@ for i in range(int(num_threats)):
 # =========================================================
 # פונקציות עזר לסימולציה
 # =========================================================
-
 def generate_pulses(threat, time_limit, offset):
-    """מייצר רכבת פולסים לאיום בודד עם אופסט פאזה"""
+    """מייצר רכבת פולסים, מתחיל מזמן שלילי כדי לא לפספס פולסים שגולשים לזמן 0"""
     pulses = []
-    t = offset
+
+    # חישוב המחזור הכולל כדי שנוכל ללכת אחורה בזמן
+    if threat['type'] == "Staggered":
+        period = sum(threat['stagger'])
+    else:
+        period = threat['base_pri']
+
+    # מתחילים לייצר פולסים הרחק בזמן השלילי כדי לכסות את כל ההיסטוריה
+    t = offset - (period * 2)
     st_idx = 0
 
     while t < time_limit:
-        pulses.append((t, t + threat['pw']))
+        # שומרים רק פולסים שמגיעים לזמן הרלוונטי (חיובי)
+        if t + threat['pw'] >= 0:
+            pulses.append((t, t + threat['pw']))
 
         if threat['type'] == "Fixed":
             interval = threat['base_pri']
@@ -70,6 +81,7 @@ def generate_pulses(threat, time_limit, offset):
             interval = threat['stagger'][st_idx]
             st_idx = (st_idx + 1) % len(threat['stagger'])
         t += interval
+
     return pulses
 
 
@@ -78,7 +90,6 @@ def get_all_lock_times(limit_t):
     מריץ ניסוי אחד. מחזיר רשימה של זמני הנעילה (ms) לכל איום.
     אם איום לא ננעל, הערך שלו יהיה None.
     """
-    # תיקון הבאג: המקלט יכול להתחיל "לפני זמן אפס" כדי לתפוס פולסים על ההתחלה
     r_off = np.random.uniform(-dwell, revisit - dwell)
 
     all_threats_pulses = []
@@ -103,7 +114,9 @@ def get_all_lock_times(limit_t):
             for i in range(len(threats_list)):
                 if lock_times[i] is not None: continue  # כבר מצאנו את זמן הנעילה לאיום זה
 
-                hit = any(max(obs_start, p[0]) < min(obs_end, p[1]) for p in all_threats_pulses[i])
+                # --- השינוי המרכזי: בדיקת משך החפיפה ---
+                # מחשבים את אורך החפיפה (overlap) ובודקים אם הוא עומד בסף המינימלי
+                hit = any((min(obs_end, p[1]) - max(obs_start, p[0])) >= min_overlap for p in all_threats_pulses[i])
 
                 if hit:
                     hits[i] += 1
@@ -174,7 +187,7 @@ for i in range(len(threats_list)):
 st.subheader("📊 POI & MTTI Results")
 st.caption(f"⚙️ Simulation run with **{trials}** MC trials across **{len(threats_list)}** active threats.")
 
-# תיבת בחירה איזה גרפים להציג (העברתי אותה לפני המספרים כדי שהיא תשלוט עליהם)
+# תיבת בחירה איזה גרפים להציג
 to_show = st.multiselect("Select curves to display:", ["Combined POI"] + threat_names, default=["Combined POI"])
 
 # שורת מדדים דינמית שמתעדכנת לפי מה שנבחר בתיבת הטקסט
