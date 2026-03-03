@@ -190,20 +190,55 @@ st.caption(f"⚙️ Simulation run with **{trials}** MC trials across **{len(thr
 # תיבת בחירה איזה גרפים להציג
 to_show = st.multiselect("Select curves to display:", ["Combined POI"] + threat_names, default=["Combined POI"])
 
+# --- התוספת לאפשור Combined דינמי עבור האיומים הנבחרים ---
+selected_threat_names = [name for name in to_show if name != "Combined POI"]
+show_dynamic_combined = False
+dyn_poi_curve = []
+dyn_mtti = 0
+
+if len(selected_threat_names) > 1:
+    show_dynamic_combined = st.checkbox(f"Show Dynamic Combined (OR) for {len(selected_threat_names)} selected threats",
+                                        value=True)
+
+    if show_dynamic_combined:
+        selected_indices = [int(name.split('#')[1]) - 1 for name in selected_threat_names]
+        dyn_lock_times = []
+        for res in all_trials_results:
+            valid_times = [res[i] for i in selected_indices if res[i] is not None]
+            if valid_times:
+                dyn_lock_times.append(min(valid_times))
+
+        for t_pt in time_axis:
+            count = sum(1 for ct in dyn_lock_times if ct <= t_pt)
+            dyn_poi_curve.append((count / trials) * 100)
+        dyn_mtti = np.mean(dyn_lock_times) if dyn_lock_times else 0
+
 # שורת מדדים דינמית שמתעדכנת לפי מה שנבחר בתיבת הטקסט
-if to_show:
-    cols = st.columns(len(to_show))
-    for idx, name in enumerate(to_show):
+num_metrics = len(to_show) + (1 if show_dynamic_combined else 0)
+
+if num_metrics > 0:
+    cols = st.columns(num_metrics)
+    col_idx = 0
+
+    # נציג קודם את המדד המשולב הדינמי החדש
+    if show_dynamic_combined:
+        mtti_str = f"{dyn_mtti:.1f} ms" if dyn_mtti > 0 else "N/A"
+        cols[col_idx].metric(f"🎯 Selected Combined (OR)", f"{dyn_poi_curve[-1]:.2f}%", f"MTTI: {mtti_str}",
+                             delta_color="off")
+        col_idx += 1
+
+    for name in to_show:
         if name == "Combined POI":
             poi_val = combined_poi_curve[-1]
             mtti_str = f"{mtti_combined:.1f} ms" if mtti_combined > 0 else "N/A"
-            cols[idx].metric("🎯 Combined POI", f"{poi_val:.2f}%", f"MTTI: {mtti_str}", delta_color="off")
+            cols[col_idx].metric("🎯 Combined POI (All)", f"{poi_val:.2f}%", f"MTTI: {mtti_str}", delta_color="off")
         else:
             t_idx = int(name.split('#')[1]) - 1
             poi_val = individual_pois[t_idx][-1]
             mtti_val = individual_mttis[t_idx]
             mtti_str = f"{mtti_val:.1f} ms" if mtti_val > 0 else "N/A"
-            cols[idx].metric(f"🎯 {name} POI", f"{poi_val:.2f}%", f"MTTI: {mtti_str}", delta_color="off")
+            cols[col_idx].metric(f"🎯 {name} POI", f"{poi_val:.2f}%", f"MTTI: {mtti_str}", delta_color="off")
+        col_idx += 1
 else:
     st.warning("⚠️ בחר לפחות גרף אחד מתיבת הבחירה כדי לראות נתונים.")
 
@@ -213,8 +248,13 @@ st.divider()
 fig_poi = go.Figure()
 
 if "Combined POI" in to_show:
-    fig_poi.add_trace(go.Scatter(x=time_axis, y=combined_poi_curve, name="Combined (Any Threat)",
+    fig_poi.add_trace(go.Scatter(x=time_axis, y=combined_poi_curve, name="Combined (All Threats)",
                                  line=dict(color='#00CC96', width=4, dash='dash')))
+
+# הוספת הקו הדינמי לגרף
+if show_dynamic_combined:
+    fig_poi.add_trace(go.Scatter(x=time_axis, y=dyn_poi_curve, name="Combined (Selected OR)",
+                                 line=dict(color='#FF8C00', width=4, dash='dot')))
 
 for i, name in enumerate(threat_names):
     if name in to_show:
