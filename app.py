@@ -2,74 +2,90 @@ import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 
+# הגדרת הדף כרחב (Wide)
 st.set_page_config(page_title="Multi-Threat EW Professional Simulator", layout="wide")
 st.title("🛡️ Professional Multi-Threat EW – Phase Uncertain POI")
 
 # =========================================================
-# Sidebar - הגדרות מקלט
+# פאנל שליטה ראשי - תצוגה קומפקטית במיוחד (שורות במקום בלוקים)
 # =========================================================
-st.sidebar.header("1️⃣ Receiver Parameters")
-dwell = st.sidebar.number_input("Dwell [ms]", 1.0, 500.0, 40.0)
-revisit = st.sidebar.number_input("Revisit [ms]", 1.0, 2000.0, 100.0)
+st.markdown("### ⚙️ Simulation Setup")
 
-st.sidebar.header("2️⃣ Detection Logic")
-# --- התוספת החדשה: חפיפה מינימלית ---
-min_overlap = st.sidebar.number_input("Min Overlap for Hit [ms]", 0.0, 100.0, 0.1, step=0.1)
-age_in = st.sidebar.number_input("Age-In (Hits Needed)", 1, 10, 2)
-age_out = st.sidebar.number_input("Age-Out (Misses Allowed)", 1, 10, 2)
-max_analysis_t = st.sidebar.number_input("Max Analysis Time [ms]", 10.0, 10000.0, 1000.0)
+# חלוקה ל-6 עמודות צרות כדי להקטין משמעותית את תיבות הטקסט
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 
-st.sidebar.header("3️⃣ Monte Carlo Settings")
-trials = st.sidebar.slider("Number of Offsets", 0, 20000, 10000)
+with col1:
+    dwell = st.number_input("Dwell [ms]", 1.0, 500.0, 5.0, step=1.0)
+with col2:
+    revisit = st.number_input("Revisit [ms]", 1.0, 2000.0, 100.0, step=1.0)
+with col3:
+    min_overlap = st.number_input("Min Overlap [ms]", 0.0, 100.0, 0.0, step=0.1)
+with col4:
+    age_in = st.number_input("Age-In (Hits)", 1, 10, 2)
+with col5:
+    age_out = st.number_input("Age-Out (Misses)", 1, 10, 2)
+with col6:
+    max_analysis_t = st.number_input("Max Time [ms]", 10.0, 10000.0, 1000.0, step=10.0)
+
+# שורה שנייה: חלוקה א-סימטרית כדי לתת לסליידר קצת יותר מקום
+col7, col8, col9 = st.columns([2, 1, 3])
+with col7:
+    trials = st.slider("Monte Carlo Trials", 0, 20000, 10000)
+with col8:
+    num_threats = st.number_input("How many threats?", 1, 20, 2)
+
+st.divider()
 
 # =========================================================
-# 4️⃣ הוספת איומים דינמית
+# הגדרת איומים באמצעות לשוניות (Tabs)
 # =========================================================
-st.sidebar.header("4️⃣ Threat Configuration")
-num_threats = st.sidebar.number_input("How many threats?", 1, 20, 2)
-
+st.markdown("### 🎯 Threat Configuration")
 threats_list = []
-for i in range(int(num_threats)):
-    with st.sidebar.expander(f"🔥 Threat #{i + 1} Setup", expanded=(i == 0)):
-        t_pri_type = st.selectbox(f"PRI Type", ["Fixed", "Jittered", "Staggered"], key=f"type_{i}")
-        t_pw = st.number_input(f"PW [ms]", 0.01, 100.0, 5.0, key=f"pw_{i}")
 
-        t_data = {"id": i + 1, "type": t_pri_type, "pw": t_pw}
+if int(num_threats) > 0:
+    # יצירת לשונית עבור כל איום
+    tabs = st.tabs([f"🔥 Threat #{i + 1}" for i in range(int(num_threats))])
 
-        if t_pri_type == "Fixed":
-            t_data["base_pri"] = st.number_input(f"PRI [ms]", 1.0, 2000.0, 100.0 + (i * 20), key=f"pri_{i}")
-        elif t_pri_type == "Jittered":
-            t_data["base_pri"] = st.number_input(f"Base PRI [ms]", 1.0, 2000.0, 100.0, key=f"bpri_{i}")
-            t_data["jitter"] = st.number_input(f"Jitter (%)", 0, 99, 10, key=f"jit_{i}")
-        elif t_pri_type == "Staggered":
-            stag_in = st.text_input(f"Stagger Seq (ms)", "80,120,100", key=f"stag_{i}")
-            try:
-                t_data["stagger"] = [float(x.strip()) for x in stag_in.split(",")]
-            except:
-                t_data["stagger"] = [100.0]
+    for i, tab in enumerate(tabs):
+        with tab:
+            # חלוקה ל-4 עמודות צרות בתוך הלשונית כדי לכווץ גם את נתוני האיום
+            t_col1, t_col2, t_col3, t_col4 = st.columns(4)
 
-        threats_list.append(t_data)
+            t_pri_type = t_col1.selectbox("PRI Type", ["Fixed", "Jittered", "Staggered"], key=f"type_{i}")
+            t_pw = t_col2.number_input("PW [ms]", 0.01, 100.0, 5.0, key=f"pw_{i}")
 
+            t_data = {"id": i + 1, "type": t_pri_type, "pw": t_pw}
 
+            if t_pri_type == "Fixed":
+                t_data["base_pri"] = t_col3.number_input("PRI [ms]", 1.0, 2000.0, 100.0 + (i * 20), key=f"pri_{i}")
+            elif t_pri_type == "Jittered":
+                t_data["base_pri"] = t_col3.number_input("Base PRI [ms]", 1.0, 2000.0, 100.0, key=f"bpri_{i}")
+                t_data["jitter"] = t_col4.number_input("Jitter (%)", 0, 99, 10, key=f"jit_{i}")
+            elif t_pri_type == "Staggered":
+                stag_in = t_col3.text_input("Stagger Seq (ms)", "80,120,100", key=f"stag_{i}")
+                try:
+                    t_data["stagger"] = [float(x.strip()) for x in stag_in.split(",")]
+                except:
+                    t_data["stagger"] = [100.0]
+
+            threats_list.append(t_data)
+
+st.markdown("---")
 # =========================================================
 # פונקציות עזר לסימולציה
 # =========================================================
 def generate_pulses(threat, time_limit, offset):
-    """מייצר רכבת פולסים, מתחיל מזמן שלילי כדי לא לפספס פולסים שגולשים לזמן 0"""
     pulses = []
 
-    # חישוב המחזור הכולל כדי שנוכל ללכת אחורה בזמן
     if threat['type'] == "Staggered":
         period = sum(threat['stagger'])
     else:
         period = threat['base_pri']
 
-    # מתחילים לייצר פולסים הרחק בזמן השלילי כדי לכסות את כל ההיסטוריה
     t = offset - (period * 2)
     st_idx = 0
 
     while t < time_limit:
-        # שומרים רק פולסים שמגיעים לזמן הרלוונטי (חיובי)
         if t + threat['pw'] >= 0:
             pulses.append((t, t + threat['pw']))
 
@@ -77,7 +93,7 @@ def generate_pulses(threat, time_limit, offset):
             interval = threat['base_pri']
         elif threat['type'] == "Jittered":
             interval = threat['base_pri'] * np.random.uniform(1 - threat['jitter'] / 100, 1 + threat['jitter'] / 100)
-        else:  # Staggered
+        else:
             interval = threat['stagger'][st_idx]
             st_idx = (st_idx + 1) % len(threat['stagger'])
         t += interval
@@ -86,10 +102,6 @@ def generate_pulses(threat, time_limit, offset):
 
 
 def get_all_lock_times(limit_t):
-    """
-    מריץ ניסוי אחד. מחזיר רשימה של זמני הנעילה (ms) לכל איום.
-    אם איום לא ננעל, הערך שלו יהיה None.
-    """
     r_off = np.random.uniform(-dwell, revisit - dwell)
 
     all_threats_pulses = []
@@ -107,15 +119,12 @@ def get_all_lock_times(limit_t):
     while t_curr < limit_t:
         d_start, d_end = t_curr, t_curr + dwell
 
-        # אנחנו מסתכלים רק על החלק של ה-Dwell שנמצא בתוך טווח האנליזה
         obs_start, obs_end = max(0, d_start), min(limit_t, d_end)
 
-        if obs_start < obs_end:  # יש לנו חלון הקשבה חוקי
+        if obs_start < obs_end:
             for i in range(len(threats_list)):
-                if lock_times[i] is not None: continue  # כבר מצאנו את זמן הנעילה לאיום זה
+                if lock_times[i] is not None: continue
 
-                # --- השינוי המרכזי: בדיקת משך החפיפה ---
-                # מחשבים את אורך החפיפה (overlap) ובודקים אם הוא עומד בסף המינימלי
                 hit = any((min(obs_end, p[1]) - max(obs_start, p[0])) >= min_overlap for p in all_threats_pulses[i])
 
                 if hit:
@@ -123,7 +132,7 @@ def get_all_lock_times(limit_t):
                     misses[i] = 0
                     if hits[i] >= age_in:
                         is_locked[i] = True
-                        lock_times[i] = obs_end  # שומרים את זמן ההצלחה המדויק
+                        lock_times[i] = obs_end
                 else:
                     if is_locked[i]:
                         misses[i] += 1
@@ -133,16 +142,14 @@ def get_all_lock_times(limit_t):
                     else:
                         hits[i] = max(0, hits[i] - 1)
 
-        # אם כל האיומים כבר ננעלו, אין טעם להמשיch את הניסוי הזה
         if all(lt is not None for lt in lock_times): break
-
         t_curr += revisit
 
     return lock_times
 
 
 # =========================================================
-# הרצה ותצוגה
+# הרצה ותצוגה (החלק התחתון של הדף)
 # =========================================================
 
 all_trials_results = []
@@ -155,13 +162,13 @@ with st.spinner(f"Simulating {len(threats_list)} threats over {trials} MC trials
 time_axis = np.linspace(0, max_analysis_t, 30)
 threat_names = [f"Threat #{i + 1}" for i in range(len(threats_list))]
 
-# 1. חישוב Combined POI & MTTI (לפחות איום אחד)
+# 1. חישוב Combined POI & MTTI
 combined_poi_curve = []
 combined_lock_times = []
 for res in all_trials_results:
     valid_times = [t for t in res if t is not None]
     if valid_times:
-        combined_lock_times.append(min(valid_times))  # הזמן המהיר ביותר מבין האיומים שניצודו
+        combined_lock_times.append(min(valid_times))
 
 for t_pt in time_axis:
     count = sum(1 for ct in combined_lock_times if ct <= t_pt)
@@ -169,7 +176,7 @@ for t_pt in time_axis:
 
 mtti_combined = np.mean(combined_lock_times) if combined_lock_times else 0
 
-# 2. חישוב Individual POI & MTTI לכל איום
+# 2. חישוב Individual POI & MTTI
 individual_pois = []
 individual_mttis = []
 for i in range(len(threats_list)):
@@ -183,14 +190,12 @@ for i in range(len(threats_list)):
     individual_pois.append(poi_curve)
     individual_mttis.append(np.mean(t_times) if t_times else 0)
 
-# --- תצוגת UI ---
+# --- תצוגת UI תחתון (גרפים ומדדים) ---
 st.subheader("📊 POI & MTTI Results")
 st.caption(f"⚙️ Simulation run with **{trials}** MC trials across **{len(threats_list)}** active threats.")
 
-# תיבת בחירה איזה גרפים להציג
 to_show = st.multiselect("Select curves to display:", ["Combined POI"] + threat_names, default=["Combined POI"])
 
-# --- התוספת לאפשור Combined דינמי עבור האיומים הנבחרים ---
 selected_threat_names = [name for name in to_show if name != "Combined POI"]
 show_dynamic_combined = False
 dyn_poi_curve = []
@@ -213,14 +218,12 @@ if len(selected_threat_names) > 1:
             dyn_poi_curve.append((count / trials) * 100)
         dyn_mtti = np.mean(dyn_lock_times) if dyn_lock_times else 0
 
-# שורת מדדים דינמית שמתעדכנת לפי מה שנבחר בתיבת הטקסט
 num_metrics = len(to_show) + (1 if show_dynamic_combined else 0)
 
 if num_metrics > 0:
     cols = st.columns(num_metrics)
     col_idx = 0
 
-    # נציג קודם את המדד המשולב הדינמי החדש
     if show_dynamic_combined:
         mtti_str = f"{dyn_mtti:.1f} ms" if dyn_mtti > 0 else "N/A"
         cols[col_idx].metric(f"🎯 Selected Combined (OR)", f"{dyn_poi_curve[-1]:.2f}%", f"MTTI: {mtti_str}",
@@ -244,21 +247,18 @@ else:
 
 st.divider()
 
-# ציור הגרף עצמו לפי הבחירה
 fig_poi = go.Figure()
 
 if "Combined POI" in to_show:
     fig_poi.add_trace(go.Scatter(x=time_axis, y=combined_poi_curve, name="Combined (All Threats)",
                                  line=dict(color='#00CC96', width=4, dash='dash')))
 
-# הוספת הקו הדינמי לגרף
 if show_dynamic_combined:
     fig_poi.add_trace(go.Scatter(x=time_axis, y=dyn_poi_curve, name="Combined (Selected OR)",
                                  line=dict(color='#FF8C00', width=4, dash='dot')))
 
 for i, name in enumerate(threat_names):
     if name in to_show:
-        # כל איום מקבל קו משלו בגרף
         fig_poi.add_trace(go.Scatter(x=time_axis, y=individual_pois[i],
                                      name=f"{name} (MTTI: {individual_mttis[i]:.1f}ms)", mode='lines'))
 
