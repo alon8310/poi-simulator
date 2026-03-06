@@ -2,43 +2,74 @@ import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 
-# הגדרת הדף כרחב (Wide)
+# הגדרת הדף כרחב
 st.set_page_config(page_title="Multi-Threat EW Professional Simulator", layout="wide")
 st.title("🛡️ Professional Multi-Threat EW – Phase Uncertain POI")
 
 # =========================================================
-# פאנל שליטה ראשי - תצוגה קומפקטית
+# פאנל שליטה ראשי - תצוגה צרה, קומפקטית וצפופה
 # =========================================================
-st.markdown("### ⚙️ Simulation Setup")
+st.markdown("### ⚙️ Receiver Setup")
 
-# חלוקה ל-7 עמודות צרות
-col1, col2, col_dev, col3, col4, col5, col6 = st.columns(7)
+# קומה 1: תבנית בסיס (הוספנו עמודת spacer בסוף כדי לכווץ את הכל)
+st.markdown("**1. Base Pattern & Detection Logic**")
+r_cols = st.columns([1.2, 1, 1, 0.9, 1.1, 0.8, 0.8, 1.1, 1.5], gap="small")
 
-with col1:
-    dwell = st.number_input("Dwell [ms]", 1.0, 500.0, 5.0, step=1.0)
-with col2:
-    revisit = st.number_input("Revisit [ms]", 1.0, 2000.0, 100.0, step=1.0)
-with col_dev:
-    rev_dev = st.number_input("Rev. Dev (%)", 0.0, 99.0, 0.0, step=1.0)
-with col3:
-    min_overlap = st.number_input("Min Overlap", 0.0, 100.0, 0.0, step=0.1)
-with col4:
-    age_in = st.number_input("Age-In (Hits)", 1, 10, 1)  # ברירת מחדל 1
-with col5:
-    age_out = st.number_input("Age-Out (Miss)", 1, 10, 1)  # ברירת מחדל 1
-with col6:
-    max_analysis_t = st.number_input("Max Time [ms]", 10.0, 10000.0, 1000.0, step=10.0)
+rx_type = r_cols[0].selectbox("Rx Pattern", ["Fixed", "Custom"], key="rx_type")
 
-col7, col8 = st.columns([1, 3])
-with col7:
-    trials = st.number_input("Monte Carlo Trials", 100, 1000000, 30000, step=1000)
-with col8:
-    num_threats = st.number_input("How many threats?", 1, 20, 1)
+rx_seq = []
+if rx_type == "Fixed":
+    rx_dwell = r_cols[1].number_input("Dwell [ms]", 0.1, 500.0, 5.0, step=1.0)
+    rx_revisit = r_cols[2].number_input("Rev [ms]", 1.0, 2000.0, 100.0, step=1.0)
+    rx_dev = r_cols[3].number_input("Dev [%]", 0.0, 99.0, 0.0, step=1.0)
+    rx_seq = [(rx_dwell, rx_revisit)]
+else:
+    cust_rx_in = r_cols[1].text_input("Dwell:Rev (ms)", "5:100", help="Dwell1:Rev1, Dwell2:Rev2")
+    rx_dev = r_cols[2].number_input("Dev [%]", 0.0, 99.0, 0.0, step=1.0)
+    try:
+        rx_seq = []
+        for p in cust_rx_in.split(","):
+            d, r = p.split(":")
+            rx_seq.append((float(d.strip()), float(r.strip())))
+    except:
+        rx_seq = [(5.0, 100.0)]
+
+min_overlap = r_cols[4].number_input("Overlap [ms]", 0.0, 100.0, 0.0, step=0.1)
+age_in = r_cols[5].number_input("Age-In", 1, 10, 1)
+age_out = r_cols[6].number_input("Age-Out", 1, 10, 1)
+max_analysis_t = r_cols[7].number_input("Max Time", 10.0, 10000.0, 1000.0, step=10.0)
+
+# קומה 2: אסטרטגיית סריקה (Framing) ומונטה קרלו
+st.markdown("**2. Scan Strategy & Simulation**")
+f_cols = st.columns([1.2, 1, 1, 1.2, 1.2, 0.9, 2.5], gap="small")
+
+rx_frame_type = f_cols[0].selectbox("Rx Framing", ["None", "Regular", "Custom"], key="rx_frm_type")
+rx_frame_seq = [(50.0, 150.0)]
+rx_sync = "Continuous"
+
+if rx_frame_type == "Regular":
+    rx_fon = f_cols[1].number_input("ON [ms]", 1.0, 10000.0, 50.0, key="rx_fon")
+    rx_foff = f_cols[2].number_input("OFF [ms]", 1.0, 10000.0, 150.0, key="rx_foff")
+    rx_sync = f_cols[3].selectbox("Sync Mode", ["Continuous", "Reset"], key="rx_sync")
+    rx_frame_seq = [(rx_fon, rx_foff)]
+elif rx_frame_type == "Custom":
+    cust_rx_frm = f_cols[1].text_input("ON:OFF Pairs", "50:150, 60:200", key="rx_cust_frm")
+    rx_sync = f_cols[3].selectbox("Sync Mode", ["Continuous", "Reset"], key="rx_sync")
+    try:
+        rx_frame_seq = []
+        for p in cust_rx_frm.split(","):
+            on_val, off_val = p.split(":")
+            rx_frame_seq.append((float(on_val.strip()), float(off_val.strip())))
+    except:
+        rx_frame_seq = [(50.0, 150.0), (60.0, 200.0)]
+
+trials = f_cols[4].number_input("MC Trials", 100, 1000000, 30000, step=1000)
+num_threats = f_cols[5].number_input("Threats", 1, 20, 1)
 
 st.divider()
 
 # =========================================================
-# הגדרת איומים באמצעות לשוניות (Tabs)
+# הגדרת איומים באמצעות לשוניות (Tabs) - תצוגה מכווצת
 # =========================================================
 st.markdown("### 🎯 Threat Configuration")
 threats_list = []
@@ -48,29 +79,28 @@ if int(num_threats) > 0:
 
     for i, tab in enumerate(tabs):
         with tab:
-            # שורה 1: תצורת הפולסים (PRI ו-PW)
-            t_col1, t_col2, t_col3, t_col4 = st.columns(4)
+            # שימוש בעמודת ספייסר כדי למנוע הימתחות התיבות בלשונית האיום
+            t_cols1 = st.columns([1.2, 1, 1.2, 1.8, 3.5], gap="small")
 
-            t_pri_type = t_col1.selectbox("PRI Type", ["Fixed", "Jittered", "Staggered", "Custom"], key=f"type_{i}")
+            t_pri_type = t_cols1[0].selectbox("PRI Type", ["Fixed", "Jittered", "Staggered", "Custom"], key=f"type_{i}")
             t_data = {"id": i + 1, "type": t_pri_type}
 
             if t_pri_type == "Fixed":
-                t_data["pw"] = t_col2.number_input("PW [ms]", 0.01, 100.0, 5.0, key=f"pw_{i}")
-                t_data["base_pri"] = t_col3.number_input("PRI [ms]", 1.0, 2000.0, 100.0 + (i * 20), key=f"pri_{i}")
+                t_data["pw"] = t_cols1[1].number_input("PW [ms]", 0.01, 100.0, 5.0, key=f"pw_{i}")
+                t_data["base_pri"] = t_cols1[2].number_input("PRI [ms]", 1.0, 2000.0, 100.0 + (i * 20), key=f"pri_{i}")
             elif t_pri_type == "Jittered":
-                t_data["pw"] = t_col2.number_input("PW [ms]", 0.01, 100.0, 5.0, key=f"pw_{i}")
-                t_data["base_pri"] = t_col3.number_input("Base PRI [ms]", 1.0, 2000.0, 100.0, key=f"bpri_{i}")
-                t_data["jitter"] = t_col4.number_input("Jitter (%)", 0, 99, 10, key=f"jit_{i}")
+                t_data["pw"] = t_cols1[1].number_input("PW [ms]", 0.01, 100.0, 5.0, key=f"pw_{i}")
+                t_data["base_pri"] = t_cols1[2].number_input("Base PRI", 1.0, 2000.0, 100.0, key=f"bpri_{i}")
+                t_data["jitter"] = t_cols1[3].number_input("Jitter [%]", 0, 99, 10, key=f"jit_{i}")
             elif t_pri_type == "Staggered":
-                t_data["pw"] = t_col2.number_input("PW [ms]", 0.01, 100.0, 5.0, key=f"pw_{i}")
-                stag_in = t_col3.text_input("Stagger Seq (ms)", "80,120,100", key=f"stag_{i}")
+                t_data["pw"] = t_cols1[1].number_input("PW [ms]", 0.01, 100.0, 5.0, key=f"pw_{i}")
+                stag_in = t_cols1[2].text_input("Stagger Seq", "80,120,100", key=f"stag_{i}")
                 try:
                     t_data["stagger"] = [float(x.strip()) for x in stag_in.split(",")]
                 except:
                     t_data["stagger"] = [100.0]
             elif t_pri_type == "Custom":
-                cust_in = t_col2.text_input("PW:PRI Pairs (ms)", "5:100, 10:150", help="Format: PW1:PRI1, PW2:PRI2",
-                                            key=f"cust_pri_{i}")
+                cust_in = t_cols1[1].text_input("PW:PRI Pairs", "5:100, 10:150", key=f"cust_pri_{i}")
                 try:
                     pairs = []
                     for p in cust_in.split(","):
@@ -78,20 +108,18 @@ if int(num_threats) > 0:
                         pairs.append((float(pw.strip()), float(pri.strip())))
                     t_data["custom_seq"] = pairs
                 except:
-                    t_data["custom_seq"] = [(5.0, 100.0)]  # גיבוי לשגיאת הקלדה
+                    t_data["custom_seq"] = [(5.0, 100.0)]
 
-            # שורה 2: תצורת המסגרות (Framing)
-            f_col1, f_col2, f_col3, f_col4 = st.columns(4)
-            frame_type = f_col1.selectbox("Framing", ["None", "Regular", "Custom"], key=f"frm_type_{i}")
+            t_cols2 = st.columns([1.2, 1, 1, 1.2, 4.3], gap="small")
+            frame_type = t_cols2[0].selectbox("Framing", ["None", "Regular", "Custom"], key=f"frm_type_{i}")
             t_data["frame_type"] = frame_type
 
             if frame_type == "Regular":
-                t_data["frame_on"] = f_col2.number_input("Frame ON [ms]", 1.0, 10000.0, 50.0, key=f"fon_{i}")
-                t_data["frame_off"] = f_col3.number_input("Frame OFF [ms]", 1.0, 10000.0, 150.0, key=f"foff_{i}")
-                t_data["sync"] = f_col4.selectbox("Internal Sync", ["Continuous", "Reset"], key=f"sync_{i}")
+                t_data["frame_on"] = t_cols2[1].number_input("ON [ms]", 1.0, 10000.0, 50.0, key=f"fon_{i}")
+                t_data["frame_off"] = t_cols2[2].number_input("OFF [ms]", 1.0, 10000.0, 150.0, key=f"foff_{i}")
+                t_data["sync"] = t_cols2[3].selectbox("Internal Sync", ["Continuous", "Reset"], key=f"sync_{i}")
             elif frame_type == "Custom":
-                cust_frm = f_col2.text_input("ON:OFF Pairs (ms)", "20:180, 30:270", help="Format: ON1:OFF1, ON2:OFF2",
-                                             key=f"cust_frm_{i}")
+                cust_frm = t_cols2[1].text_input("ON:OFF Pairs", "20:180, 30:270", key=f"cust_frm_{i}")
                 try:
                     pairs = []
                     for p in cust_frm.split(","):
@@ -100,9 +128,9 @@ if int(num_threats) > 0:
                     t_data["frame_seq"] = pairs
                 except:
                     t_data["frame_seq"] = [(20.0, 180.0), (30.0, 270.0)]
-                t_data["sync"] = f_col4.selectbox("Internal Sync", ["Continuous", "Reset"], key=f"sync_{i}")
+                t_data["sync"] = t_cols2[3].selectbox("Internal Sync", ["Continuous", "Reset"], key=f"sync_{i}")
             else:
-                t_data["sync"] = "Continuous"  # ללא מסגרת ההתנהגות זהה לרציף
+                t_data["sync"] = "Continuous"
 
             threats_list.append(t_data)
 
@@ -113,10 +141,9 @@ st.markdown("---")
 # פונקציות עזר לסימולציה
 # =========================================================
 def generate_pulses(th, time_limit, offset_internal, offset_frame):
-    # 1. יצירת חלונות המסגרת האקטיביים (Windowing)
     windows = []
     if th['frame_type'] == "None":
-        windows.append((-999999, 999999))  # חלון נצחי
+        windows.append((-999999, 999999))
     else:
         if th['frame_type'] == "Regular":
             f_seq = [(th['frame_on'], th['frame_off'])]
@@ -134,7 +161,6 @@ def generate_pulses(th, time_limit, offset_internal, offset_frame):
 
     pulses = []
 
-    # פונקציית עזר להוצאת ה-PW וה-PRI הבאים לפי הסוג
     def get_pw_pri(idx):
         if th['type'] == "Fixed":
             return th['pw'], th['base_pri']
@@ -146,9 +172,7 @@ def generate_pulses(th, time_limit, offset_internal, offset_frame):
         elif th['type'] == "Custom":
             return th['custom_seq'][idx % len(th['custom_seq'])]
 
-    # 2. יצירת פולסים והפעלת Masking
     if th['frame_type'] != "None" and th['sync'] == "Reset":
-        # מצב Reset: מאפסים את השעון הפנימי בכל פעם שחלון חדש נפתח
         for w_start, w_end in windows:
             if w_end < 0: continue
             p_t = w_start
@@ -157,7 +181,6 @@ def generate_pulses(th, time_limit, offset_internal, offset_frame):
                 pw, pri = get_pw_pri(p_idx)
                 p_end = p_t + pw
 
-                # חיתוך הפולס בהתאם לגבולות החלון
                 o_start = max(w_start, p_t)
                 o_end = min(w_end, p_end)
                 if o_start < o_end and o_end >= 0 and o_start < time_limit:
@@ -166,7 +189,6 @@ def generate_pulses(th, time_limit, offset_internal, offset_frame):
                 p_t += pri
                 p_idx += 1
     else:
-        # מצב Continuous או ללא מסגרת כלל
         if th['type'] == "Staggered":
             int_per = sum(th['stagger'])
         elif th['type'] == "Custom":
@@ -177,7 +199,6 @@ def generate_pulses(th, time_limit, offset_internal, offset_frame):
         p_t = offset_internal - (int_per * 2)
         p_idx = 0
 
-        # סינון חלונות שעברו כדי לחסוך זמן חישוב
         valid_windows = [w for w in windows if w[1] >= p_t]
         w_idx = 0
 
@@ -185,7 +206,6 @@ def generate_pulses(th, time_limit, offset_internal, offset_frame):
             pw, pri = get_pw_pri(p_idx)
             p_end = p_t + pw
 
-            # קידום אינדקס החלונות אל מול הזמן הנוכחי של הפולס
             while w_idx < len(valid_windows) and valid_windows[w_idx][1] < p_t:
                 w_idx += 1
 
@@ -193,7 +213,6 @@ def generate_pulses(th, time_limit, offset_internal, offset_frame):
             while temp_w < len(valid_windows) and valid_windows[temp_w][0] < p_end:
                 w_start, w_end = valid_windows[temp_w]
 
-                # חיתוך הפולס מול החלון הנוכחי
                 o_start = max(w_start, p_t)
                 o_end = min(w_end, p_end)
                 if o_start < o_end and o_end >= 0 and o_start < time_limit:
@@ -207,11 +226,9 @@ def generate_pulses(th, time_limit, offset_internal, offset_frame):
 
 
 def get_all_lock_times(limit_t):
-    r_off = np.random.uniform(-dwell, revisit - dwell)
-
+    # 1. יצירת פולסים של האיומים
     all_threats_pulses = []
     for th in threats_list:
-        # חישוב המחזור הפנימי להגרלת הפאזה
         if th['type'] == "Staggered":
             internal_period = sum(th['stagger'])
         elif th['type'] == "Custom":
@@ -219,7 +236,6 @@ def get_all_lock_times(limit_t):
         else:
             internal_period = th['base_pri']
 
-        # חישוב מחזור המסגרת להגרלת הפאזה החיצונית
         if th['frame_type'] == "Regular":
             f_period = th['frame_on'] + th['frame_off']
         elif th['frame_type'] == "Custom":
@@ -236,45 +252,105 @@ def get_all_lock_times(limit_t):
 
         all_threats_pulses.append(generate_pulses(th, limit_t + 100, offset_internal, offset_frame))
 
+    # 2. יצירת Dwells של המקלט
+    rx_windows = []
+    if rx_frame_type == "None":
+        rx_windows.append((-999999, 999999))
+    else:
+        rx_f_period = sum(f[0] + f[1] for f in rx_frame_seq)
+        rx_offset_frame = np.random.uniform(0, rx_f_period) if rx_f_period > 0 else 0
+        t_f = rx_offset_frame - (rx_f_period * 2)
+        f_idx = 0
+        while t_f < limit_t:
+            on_t, off_t = rx_frame_seq[f_idx]
+            rx_windows.append((t_f, t_f + on_t))
+            t_f += (on_t + off_t)
+            f_idx = (f_idx + 1) % len(rx_frame_seq)
+
+    rx_dwells = []
+
+    def get_rx_params(idx):
+        d, r = rx_seq[idx % len(rx_seq)]
+        if rx_dev > 0:
+            r = r * np.random.uniform(1 - rx_dev / 100.0, 1 + rx_dev / 100.0)
+        return d, r
+
+    if rx_frame_type != "None" and rx_sync == "Reset":
+        for w_start, w_end in rx_windows:
+            if w_end < 0: continue
+            p_t = w_start
+            p_idx = 0
+            while p_t < w_end:
+                d_val, r_val = get_rx_params(p_idx)
+                d_end_time = p_t + d_val
+
+                o_start = max(w_start, p_t)
+                o_end = min(w_end, d_end_time)
+
+                if o_start < o_end and o_end >= 0 and o_start < limit_t:
+                    rx_dwells.append((o_start, o_end))
+
+                p_t += r_val
+                p_idx += 1
+    else:
+        int_per = sum(p[1] for p in rx_seq)
+        p_t = np.random.uniform(0, int_per) - (int_per * 2)
+        p_idx = 0
+
+        valid_windows = [w for w in rx_windows if w[1] >= p_t]
+        w_idx = 0
+
+        while p_t < limit_t:
+            d_val, r_val = get_rx_params(p_idx)
+            d_end_time = p_t + d_val
+
+            while w_idx < len(valid_windows) and valid_windows[w_idx][1] < p_t:
+                w_idx += 1
+
+            temp_w = w_idx
+            while temp_w < len(valid_windows) and valid_windows[temp_w][0] < d_end_time:
+                w_start, w_end = valid_windows[temp_w]
+
+                o_start = max(w_start, p_t)
+                o_end = min(w_end, d_end_time)
+                if o_start < o_end and o_end >= 0 and o_start < limit_t:
+                    rx_dwells.append((o_start, o_end))
+                temp_w += 1
+
+            p_t += r_val
+            p_idx += 1
+
+    # 3. בדיקת נעילות
     hits = [0] * len(threats_list)
     misses = [0] * len(threats_list)
     is_locked = [False] * len(threats_list)
     lock_times = [None] * len(threats_list)
 
-    t_curr = r_off
-    while t_curr < limit_t:
-        d_start, d_end = t_curr, t_curr + dwell
+    for d_start, d_end in rx_dwells:
         obs_start, obs_end = max(0, d_start), min(limit_t, d_end)
+        if obs_start >= obs_end: continue
 
-        if obs_start < obs_end:
-            for i in range(len(threats_list)):
-                if lock_times[i] is not None: continue
+        for i in range(len(threats_list)):
+            if lock_times[i] is not None: continue
 
-                hit = any((min(obs_end, p[1]) - max(obs_start, p[0])) >= min_overlap for p in all_threats_pulses[i])
+            hit = any((min(obs_end, p[1]) - max(obs_start, p[0])) >= min_overlap for p in all_threats_pulses[i])
 
-                if hit:
-                    hits[i] += 1
-                    misses[i] = 0
-                    if hits[i] >= age_in:
-                        is_locked[i] = True
-                        lock_times[i] = obs_end
+            if hit:
+                hits[i] += 1
+                misses[i] = 0
+                if hits[i] >= age_in:
+                    is_locked[i] = True
+                    lock_times[i] = obs_end
+            else:
+                if is_locked[i]:
+                    misses[i] += 1
+                    if misses[i] >= age_out:
+                        is_locked[i] = False
+                        hits[i] = 0
                 else:
-                    if is_locked[i]:
-                        misses[i] += 1
-                        if misses[i] >= age_out:
-                            is_locked[i] = False
-                            hits[i] = 0
-                    else:
-                        hits[i] = max(0, hits[i] - 1)
+                    hits[i] = max(0, hits[i] - 1)
 
         if all(lt is not None for lt in lock_times): break
-
-        if rev_dev > 0:
-            current_revisit = revisit * np.random.uniform(1 - rev_dev / 100.0, 1 + rev_dev / 100.0)
-        else:
-            current_revisit = revisit
-
-        t_curr += current_revisit
 
     return lock_times
 
