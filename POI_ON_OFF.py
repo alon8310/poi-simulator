@@ -7,7 +7,7 @@ st.set_page_config(page_title="EW Time-Based POI Validator", layout="wide")
 
 st.title("🧪 Time-Progression POI Validator")
 st.markdown(
-    "תוכנית זו מציגה את התכנסות הסטטיסטיקה של המקלט לאורך זמן המשימה. ציר ה-X מייצג את הזמן שחולף בקפיצות של מחזורי מקלט (Deadlines). התוכנה בודקת מתי הסטטיסטיקה המצטברת נכנסת לתוך חלון השגיאה המותר שהגדרת.")
+    "תוכנית זו מציגה את התכנסות הסטטיסטיקה של המקלט לאורך זמן המשימה. ציר ה-X מייצג את הזמן שחולף בקפיצות של מחזורי מקלט (Deadlines). התוכנה בודקת מתי הסטטיסטיקה המצטברת נכנסת לתוך חלון השגיאה היחסית שהגדרת.")
 
 # =========================================================
 # 1. User Interface (Threat & Receiver Config)
@@ -49,21 +49,22 @@ with t_col:
 
 with r_col:
     st.subheader("📡 Receiver Parameters")
-    # Using Dwell (Active Rx time) and Gap (Off Rx time)
-    rx_dwell = st.number_input("Actual Rx Time (Dwell) [ms]", value=1.0, format="%g", min_value=0.001)
-    rx_gap = st.number_input("Rx Gap Time [ms]", value=4.0, format="%g", min_value=0.001)
+    # Using Dwell (Active Rx time) and Gap (Off Rx time) - Updated defaults
+    rx_dwell = st.number_input("Actual Rx Time (Dwell) [ms]", value=0.01, format="%g", min_value=0.0001)
+    rx_gap = st.number_input("Rx Gap Time [ms]", value=4.0, format="%g", min_value=0.0001)
 
     rx_revisit = rx_dwell + rx_gap  # Total cycle (The "Deadline")
     st.info(f"💡 **Calculated Revisit (Deadline):** {rx_revisit:g} ms")
 
 with m_col:
     st.subheader("🎲 Monte Carlo & Convergence Setup")
-    mission_time = st.number_input("Mission Duration [ms]", value=1000.0, format="%g")
+    # Updated default for mission time
+    mission_time = st.number_input("Mission Duration [ms]", value=300.0, format="%g")
     trials = st.number_input("MC Trials", min_value=100, value=2000, step=500)
 
-    # --- הוספת קלט לאחוז השגיאה המותר ---
-    error_margin = st.number_input("Allowed Error Margin (±%)", value=2.0, format="%g",
-                                   help="השגיאה המוחלטת המותרת סביב אחוז הגילוי התיאורטי. למשל, אם התיאורטי הוא 20% והשגיאה היא 2%, המערכת תחפש מתי הגרף נכנס לטווח שבין 18% ל-22%.")
+    # Relative error margin input
+    error_margin = st.number_input("Allowed Error Margin (Relative %)", value=5.0, format="%g",
+                                   help="השגיאה היחסית המותרת מתוך אחוז הגילוי התיאורטי. למשל, שגיאה של 5% על יעד של 20% תיתן טווח שבין 19% ל-21%.")
 
 
 # =========================================================
@@ -187,11 +188,13 @@ if st.button("🚀 Run Time-Based Validation", type="primary"):
     cumulative_hit_ratio = (global_cumulative_hits / total_attempts_per_step) * 100.0
     final_mc_ratio = cumulative_hit_ratio[-1]
 
-    # --- Convergence Analysis (מציאת נקודת החיתוך הראשונה עם השגיאה המותרת) ---
-    upper_bound = prob_theory + error_margin
-    lower_bound = prob_theory - error_margin
+    # --- Convergence Analysis (Relative Error Calculation) ---
+    # Calculate the absolute allowed deviation based on the theoretical probability
+    abs_error = prob_theory * (error_margin / 100.0)
+    upper_bound = min(100.0, prob_theory + abs_error)
+    lower_bound = max(0.0, prob_theory - abs_error)
 
-    # מחפש את כל האינדקסים שבהם הגרף נמצא בתוך גבולות השגיאה
+    # Find all indices where the running average is within the error margin
     converged_indices = np.where((cumulative_hit_ratio >= lower_bound) & (cumulative_hit_ratio <= upper_bound))[0]
 
     if len(converged_indices) > 0:
@@ -202,28 +205,27 @@ if st.button("🚀 Run Time-Based Validation", type="primary"):
         conv_sub = f"At Deadline #{convergence_deadline}"
     else:
         conv_text = "Not Converged"
-        conv_sub = "Increase Mission Time"
+        conv_sub = "Increase Mission Time or Trials"
 
     # --- Results Display ---
     st.divider()
     st.subheader("📊 Convergence Results Over Mission Time")
 
-    # יצירת 4 עמודות כדי להכניס את מדד ההתכנסות החדש בולט לעין
     rc1, rc2, rc3, rc4 = st.columns(4)
     rc1.metric("Theoretical Expected ON", f"{prob_theory:.2f}%")
     rc2.metric(f"MC Achieved ON (at {time_axis_ms[-1]:g} ms)", f"{final_mc_ratio:.2f}%",
-               delta=f"{final_mc_ratio - prob_theory:.3f}%", delta_color="off")
+               delta=f"{final_mc_ratio - prob_theory:.3f}% (Abs)", delta_color="off")
     rc3.metric("Total Hits / Analyzed Dwells", f"{int(global_cumulative_hits[-1]):,} / {total_attempts_per_step[-1]:,}")
-    rc4.metric(f"Time to Converge (±{error_margin}%)", conv_text, conv_sub, delta_color="off")
+    rc4.metric(f"Time to Converge (±{error_margin}% Rel)", conv_text, conv_sub, delta_color="off")
 
     # --- Plotly Graph ---
     fig = go.Figure()
 
-    # רצועת השגיאה المותרת (Shaded Area) סביב הקו התיאורטי
+    # Relative Error Tolerance Band (Shaded Area)
     fig.add_hrect(
         y0=lower_bound, y1=upper_bound,
         line_width=0, fillcolor="rgba(255, 51, 102, 0.1)",
-        annotation_text=f"±{error_margin}% Tolerance Band",
+        annotation_text=f"±{error_margin}% Relative Tolerance Band [{lower_bound:.2f}% - {upper_bound:.2f}%]",
         annotation_position="top left"
     )
 
@@ -246,21 +248,24 @@ if st.button("🚀 Run Time-Based Validation", type="primary"):
         line=dict(color='#FF3366', width=3, dash='dash')
     ))
 
-    # אם הייתה התכנסות, הוספת סמן (נקודה בולטת) על הגרף בנקודת ההתכנסות
+    # Convergence Marker
     if len(converged_indices) > 0:
         fig.add_trace(go.Scatter(
             x=[convergence_time_ms],
             y=[cumulative_hit_ratio[first_convergence_idx]],
             mode="markers",
             marker=dict(color="yellow", size=12, line=dict(color="black", width=2)),
-            name=f"Reached Target (±{error_margin}%)"
+            name=f"Reached Target (±{error_margin}% Rel)"
         ))
+
+    # Dynamically scale Y-axis to focus on the area of interest, adding a minimum visual padding of 5%
+    y_padding = max(abs_error * 3, 5.0)
 
     fig.update_layout(
         title="Hit Ratio (ON Duty Cycle) Convergence Across Mission Time",
         xaxis_title="Mission Progression Time [ms] (Steps = Rx Deadlines)",
         yaxis_title="Cumulative Hit Ratio up to this time [%]",
-        yaxis_range=[max(0, prob_theory - (error_margin * 3)), min(100, prob_theory + (error_margin * 3))],
+        yaxis_range=[max(0, prob_theory - y_padding), min(100, prob_theory + y_padding)],
         hovermode="x unified"
     )
 
