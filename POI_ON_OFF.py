@@ -5,6 +5,30 @@ import plotly.graph_objects as go
 # Set up page layout
 st.set_page_config(page_title="EW Time-Based POI Validator", layout="wide")
 
+# =========================================================
+# CSS Hack: UI Optimization (מסתיר כפתורים ומצמיד עמודות)
+# =========================================================
+custom_css = """
+<style>
+[data-testid="stNumberInput"] button {
+    display: none !important;
+}
+input[type="number"] {
+    -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+div[data-testid="column"] {
+    padding-left: 0.15rem !important;
+    padding-right: 0.15rem !important;
+}
+</style>
+"""
+st.markdown(custom_css, unsafe_allow_html=True)
+
 st.title("🧪 Time-Progression POI Validator")
 st.markdown(
     "תוכנית זו מציגה את התכנסות הסטטיסטיקה של המקלט לאורך זמן המשימה. ציר ה-X מייצג את הזמן שחולף בקפיצות של מחזורי מקלט (Deadlines). התוכנה בודקת מתי הסטטיסטיקה המצטברת נכנסת לתוך חלון השגיאה היחסית שהגדרת.")
@@ -20,46 +44,82 @@ with t_col:
     st.subheader("🎯 Threat Parameters")
     t_type = st.selectbox("PRI Type", ["Fixed", "Jittered", "Staggered"])
 
-    pw = st.number_input("Pulse Width (PW) [ms]", value=2.0, format="%g")
+    # PW Input
+    c1, c2 = st.columns([2.5, 1])
+    pw_in = c1.number_input("Pulse Width (PW)", value=2.0, format="%g")
+    pw_u = c2.selectbox("Unit", ["ms", "us"], key="pw_u", label_visibility="hidden")
+    pw = pw_in * (0.001 if pw_u == "us" else 1.0)
 
     # Dynamic PRI inputs based on type
     avg_pri = 10.0  # Default fallback
     if t_type == "Fixed":
-        pri = st.number_input("PRI [ms]", value=10.0, format="%g")
+        c1, c2 = st.columns([2.5, 1])
+        pri_in = c1.number_input("PRI", value=10.0, format="%g")
+        pri_u = c2.selectbox("Unit", ["ms", "us"], key="pri_u", label_visibility="hidden")
+        pri = pri_in * (0.001 if pri_u == "us" else 1.0)
         avg_pri = pri
+
     elif t_type == "Jittered":
-        pri = st.number_input("Base PRI [ms]", value=10.0, format="%g")
+        c1, c2 = st.columns([2.5, 1])
+        pri_in = c1.number_input("Base PRI", value=10.0, format="%g")
+        pri_u = c2.selectbox("Unit", ["ms", "us"], key="pri_u", label_visibility="hidden")
+        pri = pri_in * (0.001 if pri_u == "us" else 1.0)
         jitter = st.slider("Jitter [%]", 0.0, 50.0, 10.0)
         avg_pri = pri
+
     elif t_type == "Staggered":
-        stag_in = st.text_input("Stagger Sequence [ms]", "8, 10, 12")
+        c1, c2 = st.columns([2.5, 1])
+        stag_in = c1.text_input("Stagger Seq", "8, 10, 12")
+        stag_u = c2.selectbox("Unit", ["ms", "us"], key="stag_u", label_visibility="hidden")
+        stag_mult = 0.001 if stag_u == "us" else 1.0
         try:
-            stagger_seq = [float(x.strip()) for x in stag_in.split(",")]
+            stagger_seq = [float(x.strip()) * stag_mult for x in stag_in.split(",")]
         except:
-            stagger_seq = [10.0]
+            stagger_seq = [10.0 * stag_mult]
         avg_pri = np.mean(stagger_seq)
 
     # Threat Framing
     f_type = st.selectbox("Framing", ["None", "Regular"])
     if f_type == "Regular":
-        f_on = st.number_input("Frame ON [ms]", value=50.0, format="%g")
-        f_off = st.number_input("Frame OFF [ms]", value=50.0, format="%g")
+        c1, c2 = st.columns([2.5, 1])
+        f_on_in = c1.number_input("Frame ON", value=50.0, format="%g")
+        f_on_u = c2.selectbox("Unit", ["ms", "us"], key="fon_u", label_visibility="hidden")
+        f_on = f_on_in * (0.001 if f_on_u == "us" else 1.0)
+
+        c1, c2 = st.columns([2.5, 1])
+        f_off_in = c1.number_input("Frame OFF", value=50.0, format="%g")
+        f_off_u = c2.selectbox("Unit", ["ms", "us"], key="foff_u", label_visibility="hidden")
+        f_off = f_off_in * (0.001 if f_off_u == "us" else 1.0)
     else:
         f_on, f_off = 1.0, 0.0  # Dummy values for 'None'
 
 with r_col:
     st.subheader("📡 Receiver Parameters")
-    # Using Dwell (Active Rx time) and Gap (Off Rx time) - Updated defaults
-    rx_dwell = st.number_input("Actual Rx Time (Dwell) [ms]", value=0.01, format="%g", min_value=0.0001)
-    rx_gap = st.number_input("Rx Gap Time [ms]", value=4.0, format="%g", min_value=0.0001)
+
+    # Dwell Input
+    c1, c2 = st.columns([2.5, 1])
+    rx_dwell_in = c1.number_input("Actual Rx Time (Dwell)", value=0.01, format="%g", min_value=0.0001)
+    rx_dwell_u = c2.selectbox("Unit", ["ms", "us"], key="rxd_u", label_visibility="hidden")
+    rx_dwell = rx_dwell_in * (0.001 if rx_dwell_u == "us" else 1.0)
+
+    # Gap Input
+    c1, c2 = st.columns([2.5, 1])
+    rx_gap_in = c1.number_input("Rx Gap Time", value=4.0, format="%g", min_value=0.0001)
+    rx_gap_u = c2.selectbox("Unit", ["ms", "us"], key="rxg_u", label_visibility="hidden")
+    rx_gap = rx_gap_in * (0.001 if rx_gap_u == "us" else 1.0)
 
     rx_revisit = rx_dwell + rx_gap  # Total cycle (The "Deadline")
     st.info(f"💡 **Calculated Revisit (Deadline):** {rx_revisit:g} ms")
 
 with m_col:
     st.subheader("🎲 Monte Carlo & Convergence Setup")
-    # Updated default for mission time
-    mission_time = st.number_input("Mission Duration [ms]", value=300.0, format="%g")
+
+    # Mission Duration Input
+    c1, c2 = st.columns([2.5, 1])
+    mission_time_in = c1.number_input("Mission Duration", value=100.0, format="%g")
+    mission_time_u = c2.selectbox("Unit", ["ms", "s"], key="miss_u", label_visibility="hidden")
+    mission_time = mission_time_in * (1000.0 if mission_time_u == "s" else 1.0)
+
     trials = st.number_input("MC Trials", min_value=100, value=2000, step=500)
 
     # Relative error margin input
@@ -89,7 +149,7 @@ def generate_threat_pulses(time_limit, offset_internal, offset_frame):
         if t_type == "Fixed":
             return pri
         elif t_type == "Jittered":
-            return pri * np.random.uniform(1 - jitter / 100, 1 + jitter / 100)
+            return pri * np.random.uniform(1 - jitter / 100.0, 1 + jitter / 100.0)
         elif t_type == "Staggered":
             return stagger_seq[idx % len(stagger_seq)]
 
@@ -136,10 +196,32 @@ if st.button("🚀 Run Time-Based Validation", type="primary"):
         st.error("❌ Mission Duration is shorter than a single Receiver Revisit (Deadline)!")
         st.stop()
 
-    # --- Theoretical Calculation ---
-    base_prob = min(1.0, (pw + rx_dwell) / avg_pri)
-    frame_prob = 1.0 if f_type == "None" else (f_on / (f_on + f_off))
-    prob_theory = base_prob * frame_prob * 100.0
+    # --- Exact Theoretical Calculation (Numerical Integration) ---
+    # מחשב את החפיפה המדויקת של הרחבת חלון המקלט גם כשיש מסגרות מורכבות
+    eval_time = max(50000.0, avg_pri * 500)  # Integration period
+    dummy_pulses = generate_threat_pulses(eval_time, 0, 0)
+
+    if len(dummy_pulses) == 0:
+        prob_theory = 0.0
+    else:
+        vws = [[p[0] - rx_dwell, p[1]] for p in dummy_pulses]
+        vws.sort(key=lambda x: x[0])
+        merged_vws = [vws[0]]
+        for current in vws[1:]:
+            last = merged_vws[-1]
+            if current[0] <= last[1]:
+                last[1] = max(last[1], current[1])
+            else:
+                merged_vws.append(current)
+
+        total_vuln_time = 0.0
+        for start, end in merged_vws:
+            clipped_start = max(0.0, start)
+            clipped_end = min(eval_time, end)
+            if clipped_start < clipped_end:
+                total_vuln_time += (clipped_end - clipped_start)
+
+        prob_theory = (total_vuln_time / eval_time) * 100.0
 
     # Array to accumulate total hits across ALL trials, step by step
     global_cumulative_hits = np.zeros(num_steps)
@@ -189,12 +271,10 @@ if st.button("🚀 Run Time-Based Validation", type="primary"):
     final_mc_ratio = cumulative_hit_ratio[-1]
 
     # --- Convergence Analysis (Relative Error Calculation) ---
-    # Calculate the absolute allowed deviation based on the theoretical probability
     abs_error = prob_theory * (error_margin / 100.0)
     upper_bound = min(100.0, prob_theory + abs_error)
     lower_bound = max(0.0, prob_theory - abs_error)
 
-    # Find all indices where the running average is within the error margin
     converged_indices = np.where((cumulative_hit_ratio >= lower_bound) & (cumulative_hit_ratio <= upper_bound))[0]
 
     if len(converged_indices) > 0:
@@ -258,7 +338,6 @@ if st.button("🚀 Run Time-Based Validation", type="primary"):
             name=f"Reached Target (±{error_margin}% Rel)"
         ))
 
-    # Dynamically scale Y-axis to focus on the area of interest, adding a minimum visual padding of 5%
     y_padding = max(abs_error * 3, 5.0)
 
     fig.update_layout(
@@ -269,7 +348,6 @@ if st.button("🚀 Run Time-Based Validation", type="primary"):
         hovermode="x unified"
     )
 
-    # Setting explicitly to show tick marks exactly at Deadlines
     if num_steps <= 20:
         fig.update_xaxes(tickvals=time_axis_ms)
 
